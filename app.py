@@ -301,8 +301,18 @@ def main():
                     if entry.get("key_learnings"):
                         for learning in entry["key_learnings"]:
                             st.markdown(f"  - {learning}")
+                    if entry.get("english_phrases"):
+                        st.markdown("**🌐 英語フレーズ:**")
+                        for phrase in entry["english_phrases"]:
+                            st.markdown(
+                                f"  - **{phrase.get('english', '')}** — {phrase.get('japanese', '')}"
+                            )
 
         st.divider()
+        if st.button("📚 過去のテストまとめ"):
+            st.session_state.phase = "review_tests"
+            st.rerun()
+
         if st.button("🔄 新しい振り返りを始める"):
             st.session_state.messages = []
             st.session_state.turn_count = 0
@@ -313,9 +323,9 @@ def main():
             st.rerun()
 
     # --- メインエリア ---
-    st.title("今日の振り返り")
-
-    client = get_client()
+    if st.session_state.phase != "review_tests":
+        st.title("今日の振り返り")
+        client = get_client()
 
     # ---- チャットフェーズ ----
     if st.session_state.phase == "chat":
@@ -514,6 +524,46 @@ def main():
                 st.session_state.quiz_data = None
                 st.session_state.quiz_answered = False
                 st.rerun()
+
+
+    # ---- 過去のテストまとめフェーズ ----
+    elif st.session_state.phase == "review_tests":
+        st.title("📚 過去のテストまとめ")
+        st.caption("これまでの振り返りで学んだビジネス英語フレーズの一覧です。")
+
+        diaries = load_all_diaries()
+        all_phrases = []
+        for date_str, entries in diaries:
+            for entry in entries:
+                for phrase in entry.get("english_phrases", []):
+                    all_phrases.append({"date": date_str, **phrase})
+
+        if not all_phrases:
+            st.info("まだ英語フレーズがありません。振り返りを行うとここに蓄積されます。")
+        else:
+            st.markdown(f"**全 {len(all_phrases)} フレーズ**")
+            for i, phrase in enumerate(all_phrases, 1):
+                st.markdown(
+                    f"""
+                    <div style="background:#f0f4ff;border-radius:8px;padding:12px;margin-bottom:10px;
+                                border-left:4px solid #1a237e;">
+                        <div style="font-size:12px;color:#888;">📅 {phrase['date']}</div>
+                        <div style="font-size:16px;font-weight:bold;color:#1a237e;margin-top:4px;">
+                            {i}. {phrase.get('english', '')}
+                        </div>
+                        <div style="font-size:14px;color:#333;margin-top:4px;">
+                            {phrase.get('japanese', '')}
+                        </div>
+                        <div style="font-size:12px;color:#666;margin-top:4px;">
+                            💬 {phrase.get('context', '')}
+                        </div>
+                    </div>""",
+                    unsafe_allow_html=True,
+                )
+
+        if st.button("🔄 振り返りに戻る"):
+            st.session_state.phase = "chat"
+            st.rerun()
 
 
 if __name__ == "__main__":
