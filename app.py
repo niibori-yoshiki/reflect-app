@@ -278,6 +278,8 @@ def main():
         st.session_state.quiz_data = None
     if "quiz_answered" not in st.session_state:
         st.session_state.quiz_answered = False
+    if "waiting_for_ai" not in st.session_state:
+        st.session_state.waiting_for_ai = False
 
     profile = load_profile()
 
@@ -310,6 +312,7 @@ def main():
             st.session_state.summary_data = None
             st.session_state.quiz_data = None
             st.session_state.quiz_answered = False
+            st.session_state.waiting_for_ai = False
             st.rerun()
 
     # --- メインエリア ---
@@ -329,6 +332,20 @@ def main():
             with st.chat_message(msg["role"]):
                 st.markdown(msg["content"])
 
+        # AI応答待ちの場合、生成して表示
+        if st.session_state.waiting_for_ai:
+            with st.chat_message("assistant"):
+                with st.spinner("考え中..."):
+                    ai_messages = [
+                        {"role": m["role"], "content": m["content"]}
+                        for m in st.session_state.messages
+                    ]
+                    reply = chat(client, ai_messages)
+                    st.markdown(reply)
+                    st.session_state.messages.append({"role": "assistant", "content": reply})
+                    st.session_state.waiting_for_ai = False
+                    st.rerun()
+
         remaining = MAX_TURNS - st.session_state.turn_count
         if remaining > 0:
             st.caption(f"あと {remaining} 回の会話でまとめに入ります")
@@ -343,13 +360,8 @@ def main():
                 st.session_state.phase = "summarizing"
                 st.rerun()
             else:
-                # AI返答
-                ai_messages = [
-                    {"role": m["role"], "content": m["content"]}
-                    for m in st.session_state.messages
-                ]
-                reply = chat(client, ai_messages)
-                st.session_state.messages.append({"role": "assistant", "content": reply})
+                # AI応答を次のレンダリングで生成
+                st.session_state.waiting_for_ai = True
                 st.rerun()
 
     # ---- まとめ生成中 ----
@@ -441,6 +453,7 @@ def main():
             st.session_state.summary_data = None
             st.session_state.quiz_data = None
             st.session_state.quiz_answered = False
+            st.session_state.waiting_for_ai = False
             st.rerun()
 
     # ---- クイズフェーズ ----
@@ -473,14 +486,14 @@ def main():
         st.markdown(
             f"""
             <div style="background:#fff8e1;border-radius:12px;padding:20px;margin:16px 0;
-                        border:2px solid #FFD54F;">
-                <div style="font-size:18px;font-weight:bold;margin-bottom:12px;">
+                        border:2px solid #FFD54F;color:#1a1a1a;">
+                <div style="font-size:18px;font-weight:bold;margin-bottom:12px;color:#1a1a1a;">
                     🤔 穴埋め問題
                 </div>
-                <div style="font-size:16px;line-height:1.8;">
+                <div style="font-size:16px;line-height:1.8;color:#1a1a1a;">
                     {quiz.get('question', '')}
                 </div>
-                <div style="font-size:13px;color:#888;margin-top:8px;">
+                <div style="font-size:13px;color:#555;margin-top:8px;">
                     💡 ヒント: {quiz.get('hint', '')}
                 </div>
             </div>""",
@@ -513,6 +526,7 @@ def main():
                 st.session_state.summary_data = None
                 st.session_state.quiz_data = None
                 st.session_state.quiz_answered = False
+                st.session_state.waiting_for_ai = False
                 st.rerun()
 
 
