@@ -8,6 +8,7 @@ import os
 import datetime
 import io
 from pathlib import Path
+from typing import Dict, List, Optional, Tuple
 
 import streamlit as st
 import anthropic
@@ -141,7 +142,7 @@ def save_diary(entry: dict):
     path.write_text(json.dumps(entries, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def load_all_diaries() -> list[tuple[str, list[dict]]]:
+def load_all_diaries() -> List[Tuple[str, List[dict]]]:
     results = []
     if not DIARY_DIR.exists():
         return results
@@ -151,17 +152,17 @@ def load_all_diaries() -> list[tuple[str, list[dict]]]:
     return results
 
 
-def load_vocabulary() -> list[dict]:
+def load_vocabulary() -> List[dict]:
     if VOCAB_PATH.exists():
         return json.loads(VOCAB_PATH.read_text(encoding="utf-8"))
     return []
 
 
-def save_vocabulary(vocab: list[dict]):
+def save_vocabulary(vocab: List[dict]):
     VOCAB_PATH.write_text(json.dumps(vocab, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def add_phrases_to_vocabulary(phrases: list[dict]):
+def add_phrases_to_vocabulary(phrases: List[dict]):
     vocab = load_vocabulary()
     existing = {p["english"] for p in vocab}
     today = datetime.date.today().isoformat()
@@ -189,7 +190,7 @@ def get_client() -> anthropic.Anthropic:
     return anthropic.Anthropic(api_key=api_key)
 
 
-def chat(client: anthropic.Anthropic, messages: list[dict], system: str = SYSTEM_PROMPT) -> str:
+def chat(client: anthropic.Anthropic, messages: List[dict], system: str = SYSTEM_PROMPT) -> str:
     resp = client.messages.create(
         model="claude-sonnet-4-20250514",
         max_tokens=1024,
@@ -199,7 +200,7 @@ def chat(client: anthropic.Anthropic, messages: list[dict], system: str = SYSTEM
     return resp.content[0].text
 
 
-def generate_summary(client: anthropic.Anthropic, messages: list[dict]):
+def generate_summary(client: anthropic.Anthropic, messages: List[dict]):
     conversation_text = "\n".join(
         f"{'ユーザー' if m['role'] == 'user' else 'AI'}: {m['content']}" for m in messages
     )
@@ -241,7 +242,7 @@ def generate_quiz(client: anthropic.Anthropic, phrase: str, japanese: str):
 # ---------------------------------------------------------------------------
 # 音声機能
 # ---------------------------------------------------------------------------
-def transcribe_audio(audio_bytes: bytes) -> str | None:
+def transcribe_audio(audio_bytes: bytes) -> Optional[str]:
     """音声データをテキストに変換（speech_recognition使用）"""
     try:
         import speech_recognition as sr
