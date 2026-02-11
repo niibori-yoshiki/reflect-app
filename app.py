@@ -152,9 +152,33 @@ def load_all_diaries() -> List[Tuple[str, List[dict]]]:
     return results
 
 
+def normalize_phrase(item) -> dict:
+    """文字列またはdictをフレーズdictに正規化する"""
+    if isinstance(item, dict):
+        return item
+    if isinstance(item, str):
+        return {
+            "english": item,
+            "japanese": "",
+            "context": "",
+            "learned_date": "",
+            "review_count": 0,
+            "mastered": False,
+        }
+    return {
+        "english": str(item),
+        "japanese": "",
+        "context": "",
+        "learned_date": "",
+        "review_count": 0,
+        "mastered": False,
+    }
+
+
 def load_vocabulary() -> List[dict]:
     if VOCAB_PATH.exists():
-        return json.loads(VOCAB_PATH.read_text(encoding="utf-8"))
+        raw = json.loads(VOCAB_PATH.read_text(encoding="utf-8"))
+        return [normalize_phrase(item) for item in raw]
     return []
 
 
@@ -167,11 +191,12 @@ def add_phrases_to_vocabulary(phrases: List[dict]):
     existing = {p["english"] for p in vocab}
     today = datetime.date.today().isoformat()
     for p in phrases:
-        if p["english"] not in existing:
+        ph = normalize_phrase(p)
+        if ph["english"] not in existing:
             vocab.append({
-                "english": p["english"],
-                "japanese": p["japanese"],
-                "context": p.get("context", ""),
+                "english": ph["english"],
+                "japanese": ph.get("japanese", ""),
+                "context": ph.get("context", ""),
                 "learned_date": today,
                 "review_count": 0,
                 "mastered": False,
@@ -242,24 +267,6 @@ def generate_quiz(client: anthropic.Anthropic, phrase: str, japanese: str):
 # ---------------------------------------------------------------------------
 # 音声機能
 # ---------------------------------------------------------------------------
-def transcribe_audio(audio_bytes: bytes) -> Optional[str]:
-    """音声データをテキストに変換（speech_recognition使用）"""
-    try:
-        import speech_recognition as sr
-        recognizer = sr.Recognizer()
-        audio_file = sr.AudioFile(io.BytesIO(audio_bytes))
-        with audio_file as source:
-            audio_data = recognizer.record(source)
-        text = recognizer.recognize_google(audio_data, language="ja-JP")
-        return text
-    except ImportError:
-        st.error("音声認識には `SpeechRecognition` パッケージが必要です。`pip install SpeechRecognition` を実行してください。")
-        return None
-    except Exception as e:
-        st.error(f"音声認識エラー: {e}")
-        return None
-
-
 def render_tts(text: str, lang: str = "ja-JP"):
     """ブラウザのSpeechSynthesisでテキストを読み上げ"""
     escaped = text.replace("\\", "\\\\").replace("'", "\\'").replace("\n", " ").replace('"', '\\"')
@@ -298,10 +305,27 @@ def inject_css(dark_mode: bool = False):
                 --success: #4caf50;
                 --xp-bar: #ffd54f;
                 --border: #2a3a5c;
+                --menu-bg: #16213e;
             }
             .stApp { background-color: var(--bg-primary) !important; }
-            .stSidebar > div { background-color: var(--bg-secondary) !important; }
             .stMarkdown, .stText { color: var(--text-primary) !important; }
+            .top-menu {
+                display: flex; align-items: center; justify-content: space-between;
+                padding: 8px 16px; background: var(--menu-bg);
+                border-bottom: 1px solid var(--border); border-radius: 10px;
+                margin-bottom: 16px;
+            }
+            .top-menu-left { display: flex; align-items: center; gap: 8px; }
+            .top-menu-title { font-size: 20px; font-weight: bold; color: var(--accent-light); }
+            .nav-pills { display: flex; gap: 4px; }
+            .nav-pill {
+                padding: 6px 16px; border-radius: 20px; font-size: 14px;
+                color: var(--text-secondary); background: transparent; border: none; cursor: pointer;
+                text-decoration: none;
+            }
+            .nav-pill.active {
+                background: var(--accent); color: white; font-weight: bold;
+            }
             .phrase-card {
                 background: var(--bg-card); border-left: 4px solid var(--accent);
                 border-radius: 8px; padding: 14px; margin-bottom: 10px;
@@ -331,14 +355,6 @@ def inject_css(dark_mode: bool = False):
                 background: var(--bg-card); border-radius: 12px; padding: 20px; margin: 16px 0;
                 border: 2px solid var(--accent);
             }
-            .voice-btn {
-                width: 80px; height: 80px; border-radius: 50%; border: none;
-                background: linear-gradient(135deg, var(--accent), var(--accent-light));
-                color: white; font-size: 32px; cursor: pointer; margin: 20px auto; display: block;
-                box-shadow: 0 4px 20px rgba(108,99,255,0.4);
-                transition: transform 0.2s, box-shadow 0.2s;
-            }
-            .voice-btn:hover { transform: scale(1.1); box-shadow: 0 6px 30px rgba(108,99,255,0.6); }
         </style>
         """, unsafe_allow_html=True)
     else:
@@ -355,6 +371,24 @@ def inject_css(dark_mode: bool = False):
                 --success: #4caf50;
                 --xp-bar: #ffd54f;
                 --border: #e0e0e0;
+                --menu-bg: #f0f4ff;
+            }
+            .top-menu {
+                display: flex; align-items: center; justify-content: space-between;
+                padding: 8px 16px; background: var(--menu-bg);
+                border-bottom: 1px solid var(--border); border-radius: 10px;
+                margin-bottom: 16px;
+            }
+            .top-menu-left { display: flex; align-items: center; gap: 8px; }
+            .top-menu-title { font-size: 20px; font-weight: bold; color: var(--accent); }
+            .nav-pills { display: flex; gap: 4px; }
+            .nav-pill {
+                padding: 6px 16px; border-radius: 20px; font-size: 14px;
+                color: var(--text-secondary); background: transparent; border: none; cursor: pointer;
+                text-decoration: none;
+            }
+            .nav-pill.active {
+                background: var(--accent); color: white; font-weight: bold;
             }
             .phrase-card {
                 background: var(--bg-card); border-left: 4px solid var(--accent);
@@ -384,14 +418,6 @@ def inject_css(dark_mode: bool = False):
                 background: #fff8e1; border-radius: 12px; padding: 20px; margin: 16px 0;
                 border: 2px solid #ffd54f;
             }
-            .voice-btn {
-                width: 80px; height: 80px; border-radius: 50%; border: none;
-                background: linear-gradient(135deg, #1a237e, #3949ab);
-                color: white; font-size: 32px; cursor: pointer; margin: 20px auto; display: block;
-                box-shadow: 0 4px 20px rgba(26,35,126,0.3);
-                transition: transform 0.2s, box-shadow 0.2s;
-            }
-            .voice-btn:hover { transform: scale(1.1); box-shadow: 0 6px 30px rgba(26,35,126,0.5); }
         </style>
         """, unsafe_allow_html=True)
 
@@ -407,7 +433,7 @@ def render_level_badge(profile: dict):
     streak = profile.get("streak_days", 0)
     total_phrases = profile.get("total_phrases", 0)
 
-    streak_html = f'<div class="streak-badge">{streak}日連続</div>' if streak > 0 else ''
+    streak_html = f'<span class="streak-badge">{streak}日連続</span>' if streak > 0 else ''
 
     st.markdown(f"""
     <div class="level-badge">
@@ -427,11 +453,12 @@ def render_level_badge(profile: dict):
 
 
 def render_phrase_card(phrase: dict, index: int = 0):
+    p = normalize_phrase(phrase)
     st.markdown(f"""
     <div class="phrase-card">
-        <div class="phrase-en">{index}. {phrase['english']}</div>
-        <div class="phrase-ja">{phrase['japanese']}</div>
-        <div class="phrase-ctx">{phrase.get('context', '')}</div>
+        <div class="phrase-en">{index}. {p['english']}</div>
+        <div class="phrase-ja">{p.get('japanese', '')}</div>
+        <div class="phrase-ctx">{p.get('context', '')}</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -462,11 +489,49 @@ def render_stats_dashboard(profile: dict):
         """, unsafe_allow_html=True)
 
 
+def render_menu_bar(profile: dict):
+    """トップメニューバーを描画"""
+    page = st.session_state.current_page
+    pages = {
+        "reflection": "振り返り",
+        "voice": "音声会話",
+        "vocabulary": "単語帳",
+        "quiz_dojo": "クイズ道場",
+    }
+
+    col_nav, col_info, col_dark = st.columns([6, 2, 2])
+
+    with col_nav:
+        cols = st.columns(len(pages) + 1)
+        with cols[0]:
+            st.markdown("**English Diary**")
+        for i, (key, label) in enumerate(pages.items(), 1):
+            with cols[i]:
+                btn_type = "primary" if page == key else "secondary"
+                if st.button(label, key=f"menu_{key}", type=btn_type, use_container_width=True):
+                    st.session_state.current_page = key
+                    st.rerun()
+
+    with col_info:
+        level = profile["level"]
+        xp = profile["xp"]
+        needed = xp_for_next_level(level)
+        streak = profile.get("streak_days", 0)
+        streak_text = f" | {streak}日連続" if streak > 0 else ""
+        st.markdown(f"**Lv.{level}** ({xp}/{needed} XP){streak_text}")
+
+    with col_dark:
+        dark_mode = st.toggle("Dark Mode", value=st.session_state.dark_mode, key="dark_toggle")
+        if dark_mode != st.session_state.dark_mode:
+            st.session_state.dark_mode = dark_mode
+            st.rerun()
+
+
 # ---------------------------------------------------------------------------
 # ページ: 振り返り（テキスト）
 # ---------------------------------------------------------------------------
 def render_reflection_page(client: anthropic.Anthropic, profile: dict):
-    st.title("Today's Reflection")
+    st.header("Today's Reflection")
     st.caption("今日の出来事を振り返りながら英語フレーズを学ぼう")
 
     # チャットフェーズ
@@ -555,11 +620,11 @@ def render_reflection_page(client: anthropic.Anthropic, profile: dict):
 
         col_a, col_b = st.columns(2)
         with col_a:
-            if st.button("📝 クイズに挑戦する", use_container_width=True):
+            if st.button("クイズに挑戦する", use_container_width=True):
                 st.session_state.phase = "quiz"
                 st.rerun()
         with col_b:
-            if st.button("🔄 新しい振り返りを始める", use_container_width=True, key="new_from_summary"):
+            if st.button("新しい振り返りを始める", use_container_width=True, key="new_from_summary"):
                 reset_chat_state()
                 st.rerun()
 
@@ -582,8 +647,8 @@ def render_inline_quiz(client: anthropic.Anthropic):
 
     if st.session_state.quiz_data is None:
         with st.spinner("クイズを作成中..."):
-            phrase = phrases[0]
-            quiz = generate_quiz(client, phrase["english"], phrase["japanese"])
+            p = normalize_phrase(phrases[0])
+            quiz = generate_quiz(client, p["english"], p.get("japanese", ""))
             if quiz:
                 st.session_state.quiz_data = quiz
                 st.rerun()
@@ -624,7 +689,7 @@ def render_inline_quiz(client: anthropic.Anthropic):
         st.info(f"正解: **{correct}**")
         if quiz.get("explanation"):
             st.caption(f"解説: {quiz['explanation']}")
-        if st.button("🔄 新しい振り返りを始める", key="new_from_quiz", use_container_width=True):
+        if st.button("新しい振り返りを始める", key="new_from_quiz", use_container_width=True):
             reset_chat_state()
             st.rerun()
 
@@ -633,62 +698,61 @@ def render_inline_quiz(client: anthropic.Anthropic):
 # ページ: 音声会話
 # ---------------------------------------------------------------------------
 def render_voice_page(client: anthropic.Anthropic, profile: dict):
-    st.title("Voice Conversation")
-    st.caption("マイクで話して、AIと英語学習の会話をしよう")
+    st.header("Voice Conversation")
+    st.caption("AIと英語学習の会話をしよう（テキスト入力も可能）")
 
     # 音声会話用セッション状態
     if "voice_messages" not in st.session_state:
         st.session_state.voice_messages = []
-    if "voice_speaking" not in st.session_state:
-        st.session_state.voice_speaking = False
+    if "voice_last_reply" not in st.session_state:
+        st.session_state.voice_last_reply = None
+    if "voice_auto_speak" not in st.session_state:
+        st.session_state.voice_auto_speak = True
+
+    # 挨拶
+    if not st.session_state.voice_messages:
+        greeting = "Hi! 今日はどんなことがありましたか？英語で表現してみましょう！"
+        st.session_state.voice_messages.append({"role": "assistant", "content": greeting})
 
     # 会話履歴表示
     for msg in st.session_state.voice_messages:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
 
-    # 音声入力
-    st.markdown("---")
-    st.markdown("**🎤 マイクボタンを押して話してください**")
-
-    audio_data = st.audio_input("音声を録音", key="voice_audio_input", label_visibility="collapsed")
-
-    if audio_data is not None:
-        audio_key = f"processed_{hash(audio_data.getvalue())}"
-        if audio_key not in st.session_state:
-            st.session_state[audio_key] = True
-
-            with st.spinner("音声を認識中..."):
-                text = transcribe_audio(audio_data.getvalue())
-
-            if text:
-                st.session_state.voice_messages.append({"role": "user", "content": text})
-
-                with st.spinner("考え中..."):
-                    ai_messages = [{"role": m["role"], "content": m["content"]} for m in st.session_state.voice_messages]
-                    reply = chat(client, ai_messages, system=VOICE_SYSTEM_PROMPT)
-
-                st.session_state.voice_messages.append({"role": "assistant", "content": reply})
-                st.session_state.voice_last_reply = reply
-                st.rerun()
-
     # 最後のAI返答を読み上げ
-    if st.session_state.get("voice_last_reply"):
+    if st.session_state.get("voice_last_reply") and st.session_state.voice_auto_speak:
         reply = st.session_state.voice_last_reply
         render_tts(reply)
         st.session_state.voice_last_reply = None
 
+    # テキスト入力（メイン入力方法）
+    if user_input := st.chat_input("メッセージを入力...（音声は下のマイクボタン）"):
+        st.session_state.voice_messages.append({"role": "user", "content": user_input})
+
+        with st.spinner("考え中..."):
+            ai_messages = [{"role": m["role"], "content": m["content"]} for m in st.session_state.voice_messages]
+            reply = chat(client, ai_messages, system=VOICE_SYSTEM_PROMPT)
+
+        st.session_state.voice_messages.append({"role": "assistant", "content": reply})
+        st.session_state.voice_last_reply = reply
+        st.rerun()
+
     # コントロール
     st.markdown("---")
-    col1, col2 = st.columns(2)
+
+    col1, col2, col3 = st.columns(3)
     with col1:
-        if st.button("🔄 会話をリセット", use_container_width=True):
+        st.session_state.voice_auto_speak = st.checkbox(
+            "AI返答を読み上げ", value=st.session_state.voice_auto_speak
+        )
+    with col2:
+        if st.button("会話をリセット", use_container_width=True):
             st.session_state.voice_messages = []
             st.session_state.voice_last_reply = None
             st.rerun()
-    with col2:
+    with col3:
         if len(st.session_state.voice_messages) >= 4:
-            if st.button("📝 まとめを生成", use_container_width=True):
+            if st.button("まとめを生成", use_container_width=True):
                 with st.spinner("まとめ生成中..."):
                     summary = generate_summary(client, st.session_state.voice_messages)
                     if summary:
@@ -713,7 +777,7 @@ def render_voice_page(client: anthropic.Anthropic, profile: dict):
 # ページ: 単語帳
 # ---------------------------------------------------------------------------
 def render_vocabulary_page(profile: dict):
-    st.title("Vocabulary Notebook")
+    st.header("Vocabulary Notebook")
     st.caption("学んだ英語フレーズを復習しよう")
 
     vocab = load_vocabulary()
@@ -741,11 +805,11 @@ def render_vocabulary_page(profile: dict):
     for i, phrase in enumerate(filtered):
         col1, col2 = st.columns([5, 1])
         with col1:
-            mastered_mark = " ✅" if phrase.get("mastered") else ""
+            mastered_mark = " (習得済)" if phrase.get("mastered") else ""
             st.markdown(f"""
             <div class="phrase-card">
-                <div class="phrase-en">{phrase['english']}{mastered_mark}</div>
-                <div class="phrase-ja">{phrase['japanese']}</div>
+                <div class="phrase-en">{phrase.get('english', '')}{mastered_mark}</div>
+                <div class="phrase-ja">{phrase.get('japanese', '')}</div>
                 <div class="phrase-ctx">{phrase.get('context', '')}</div>
                 <div style="font-size:11px;color:var(--text-secondary);margin-top:6px;">
                     学習日: {phrase.get('learned_date', '不明')} | 復習回数: {phrase.get('review_count', 0)}
@@ -754,7 +818,7 @@ def render_vocabulary_page(profile: dict):
             """, unsafe_allow_html=True)
         with col2:
             if not phrase.get("mastered"):
-                if st.button("✅", key=f"master_{i}", help="習得済みにする"):
+                if st.button("Done", key=f"master_{i}", help="習得済みにする"):
                     idx = vocab.index(phrase)
                     vocab[idx]["mastered"] = True
                     vocab[idx]["review_count"] = vocab[idx].get("review_count", 0) + 1
@@ -763,7 +827,7 @@ def render_vocabulary_page(profile: dict):
                     save_profile(profile)
                     st.rerun()
             else:
-                if st.button("↩️", key=f"unmaster_{i}", help="未習得に戻す"):
+                if st.button("Undo", key=f"unmaster_{i}", help="未習得に戻す"):
                     idx = vocab.index(phrase)
                     vocab[idx]["mastered"] = False
                     save_vocabulary(vocab)
@@ -774,7 +838,7 @@ def render_vocabulary_page(profile: dict):
 # ページ: クイズ道場
 # ---------------------------------------------------------------------------
 def render_quiz_dojo_page(client: anthropic.Anthropic, profile: dict):
-    st.title("Quiz Dojo")
+    st.header("Quiz Dojo")
     st.caption("単語帳のフレーズからクイズに挑戦してXPを獲得しよう")
 
     vocab = load_vocabulary()
@@ -808,11 +872,11 @@ def render_quiz_dojo_page(client: anthropic.Anthropic, profile: dict):
 
     # クイズ生成
     if st.session_state.dojo_quiz is None:
-        if st.button("🎯 クイズを出題する", use_container_width=True, type="primary"):
+        if st.button("クイズを出題する", use_container_width=True, type="primary"):
             import random
             phrase = random.choice(target_vocab)
             with st.spinner("クイズ作成中..."):
-                quiz = generate_quiz(client, phrase["english"], phrase["japanese"])
+                quiz = generate_quiz(client, phrase["english"], phrase.get("japanese", ""))
                 if quiz:
                     quiz["_phrase"] = phrase
                     st.session_state.dojo_quiz = quiz
@@ -843,14 +907,14 @@ def render_quiz_dojo_page(client: anthropic.Anthropic, profile: dict):
                 st.session_state.dojo_score += 1
                 add_xp(profile, 15)
                 save_profile(profile)
-                st.info("🎯 +15 XP!")
+                st.info("+15 XP!")
 
                 # 復習回数を更新
                 phrase_data = quiz.get("_phrase")
                 if phrase_data:
                     all_vocab = load_vocabulary()
                     for v in all_vocab:
-                        if v["english"] == phrase_data["english"]:
+                        if v["english"] == phrase_data.get("english", ""):
                             v["review_count"] = v.get("review_count", 0) + 1
                             break
                     save_vocabulary(all_vocab)
@@ -883,6 +947,25 @@ def render_quiz_dojo_page(client: anthropic.Anthropic, profile: dict):
                 if count > 0:
                     st.success(f"お疲れさま！ 結果: {score}/{count} 問正解")
                 st.rerun()
+
+
+# ---------------------------------------------------------------------------
+# ページ: 過去の記録
+# ---------------------------------------------------------------------------
+def render_history_sidebar():
+    """サイドバーに過去の記録を表示"""
+    with st.sidebar:
+        st.subheader("過去の記録")
+        diaries = load_all_diaries()
+        if not diaries:
+            st.caption("まだ記録がありません")
+        for date_str, entries in diaries[:5]:
+            with st.expander(f"{date_str} ({len(entries)}件)"):
+                for i, entry in enumerate(entries):
+                    if isinstance(entry, dict):
+                        st.markdown(f"**{i+1}.** {entry.get('summary', '（要約なし）')}")
+                    else:
+                        st.markdown(f"**{i+1}.** {entry}")
 
 
 # ---------------------------------------------------------------------------
@@ -927,51 +1010,11 @@ def main():
 
     profile = load_profile()
 
-    # --- サイドバー ---
-    with st.sidebar:
-        st.title("📘 English Diary")
+    # --- トップメニューバー ---
+    render_menu_bar(profile)
 
-        # ダークモード切替
-        dark_mode = st.toggle("🌙 Dark Mode", value=st.session_state.dark_mode)
-        if dark_mode != st.session_state.dark_mode:
-            st.session_state.dark_mode = dark_mode
-            st.rerun()
-
-        st.markdown("---")
-
-        # レベルバッジ
-        render_level_badge(profile)
-
-        # ナビゲーション
-        st.markdown("---")
-        page_options = {
-            "reflection": "📝 振り返り",
-            "voice": "🎤 音声会話",
-            "vocabulary": "📚 単語帳",
-            "quiz_dojo": "🏋️ クイズ道場",
-        }
-
-        for key, label in page_options.items():
-            is_active = st.session_state.current_page == key
-            if st.button(
-                label,
-                key=f"nav_{key}",
-                use_container_width=True,
-                type="primary" if is_active else "secondary",
-            ):
-                st.session_state.current_page = key
-                st.rerun()
-
-        # 過去の記録
-        st.markdown("---")
-        st.subheader("過去の記録")
-        diaries = load_all_diaries()
-        if not diaries:
-            st.caption("まだ記録がありません")
-        for date_str, entries in diaries[:5]:
-            with st.expander(f"📅 {date_str} ({len(entries)}件)"):
-                for i, entry in enumerate(entries):
-                    st.markdown(f"**{i+1}.** {entry.get('summary', '（要約なし）')}")
+    # --- サイドバー（過去の記録のみ） ---
+    render_history_sidebar()
 
     # --- メインエリア ---
     client = get_client()
