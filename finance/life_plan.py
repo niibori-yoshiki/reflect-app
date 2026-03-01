@@ -31,11 +31,35 @@ class LifeEvent:
 
 
 @dataclass
+class SpouseIncomePhase:
+    """配偶者の収入フェーズ"""
+    label: str
+    start_year: int
+    end_year: int
+    monthly_income: int  # 円
+
+
+@dataclass
+class SpouseEmploymentPlan:
+    """配偶者の就労プラン"""
+    phases: list[SpouseIncomePhase] = field(default_factory=list)
+
+    def get_monthly_income(self, year: int) -> int:
+        """指定年の配偶者月収を返す"""
+        for phase in self.phases:
+            if phase.start_year <= year <= phase.end_year:
+                return phase.monthly_income
+        return 0
+
+
+@dataclass
 class LifePlanInput:
     """ライフプランの入力パラメータ"""
     family: list[FamilyMember] = field(default_factory=list)
     current_savings: int = 0  # 現在の貯蓄額
-    monthly_income: int = 0   # 月間収入
+    monthly_income: int = 0   # 月間収入（後方互換用: 世帯合計）
+    monthly_income_self: int = 0  # 自分の月間手取り
+    spouse_employment: SpouseEmploymentPlan | None = None
     monthly_expense: int = 0  # 月間支出
     retirement_age: int = 65  # 退職予定年齢
     life_expectancy: int = 90 # 想定寿命
@@ -114,6 +138,89 @@ def estimate_education_events(
     return events
 
 
+def build_spouse_employment_plan(
+    employment_type: str,
+    current_income: int,
+    children_config: list[dict],
+    spouse_birth_year: int,
+    spouse_retirement_age: int,
+) -> SpouseEmploymentPlan:
+    """UIの入力から配偶者の就労プランを生成する
+
+    Args:
+        employment_type: "full_time", "part_time", "homemaker"
+        current_income: 現在の手取り月収（万円）
+        children_config: 子供ごとの産休育休設定リスト
+            各要素: {child_name, birth_year, take_leave, leave_years,
+                     leave_income(円), after_leave, after_income(円)}
+        spouse_birth_year: 配偶者の生年
+        spouse_retirement_age: 配偶者の退職予定年齢
+    """
+    if employment_type == "homemaker":
+        return SpouseEmploymentPlan(phases=[])
+
+    phases = []
+    current_year = 2026
+    income_yen = current_income * 10000
+    resigned = False
+
+    configs = sorted(children_config, key=lambda c: c["birth_year"])
+
+    for cfg in configs:
+        if resigned:
+            break
+
+        birth_year = cfg["birth_year"]
+
+        # この子供の出産前の就労フェーズ
+        if current_year < birth_year and income_yen > 0:
+            phases.append(SpouseIncomePhase(
+                label="就労中",
+                start_year=current_year,
+                end_year=birth_year - 1,
+                monthly_income=income_yen,
+            ))
+
+        if cfg.get("take_leave"):
+            leave_years = cfg.get("leave_years", 1)
+            leave_end = birth_year + leave_years - 1
+            leave_income = cfg.get("leave_income", int(income_yen * 0.67))
+
+            actual_start = max(current_year, birth_year)
+            if actual_start <= leave_end:
+                phases.append(SpouseIncomePhase(
+                    label=f"産休・育休（{cfg.get('child_name', '')}）",
+                    start_year=actual_start,
+                    end_year=leave_end,
+                    monthly_income=leave_income,
+                ))
+            current_year = leave_end + 1
+        else:
+            current_year = max(current_year, birth_year + 1)
+
+        after = cfg.get("after_leave", "full_time")
+        if after == "resign":
+            resigned = True
+            income_yen = 0
+        elif after != "full_time":
+            after_income = cfg.get("after_income", 0)
+            if after_income > 0:
+                income_yen = after_income
+
+    # 退職まで就労
+    if not resigned and income_yen > 0:
+        retirement_year = spouse_birth_year + spouse_retirement_age
+        if current_year <= retirement_year:
+            phases.append(SpouseIncomePhase(
+                label="就労中",
+                start_year=current_year,
+                end_year=retirement_year,
+                monthly_income=income_yen,
+            ))
+
+    return SpouseEmploymentPlan(phases=phases)
+
+
 def estimate_retirement_fund(plan_input: LifePlanInput) -> dict:
     """老後資金の試算"""
     self_member = next((m for m in plan_input.family if m.role == "self"), None)
@@ -140,6 +247,13 @@ def estimate_retirement_fund(plan_input: LifePlanInput) -> dict:
     # 不足額
     shortfall = max(0, total_retirement_cost - total_pension)
 
+    # 現在の月間収入（新モデル対応）
+    if plan_input.monthly_income_self > 0 and plan_input.spouse_employment:
+        spouse_income = plan_input.spouse_employment.get_monthly_income(2026)
+        monthly_income = plan_input.monthly_income_self + spouse_income
+    else:
+        monthly_income = plan_input.monthly_income
+
     # 必要な月間貯蓄額（運用利回りを考慮した簡易計算）
     if years_to_retirement > 0:
         monthly_rate = plan_input.investment_return / 100 / 12
@@ -164,7 +278,7 @@ def estimate_retirement_fund(plan_input: LifePlanInput) -> dict:
         "total_pension": total_pension,
         "shortfall": shortfall,
         "required_monthly_saving": required_monthly_saving,
-        "current_monthly_savings": plan_input.monthly_income - plan_input.monthly_expense,
+        "current_monthly_savings": monthly_income - plan_input.monthly_expense,
     }
 
 
@@ -176,7 +290,8 @@ def simulate_yearly_cashflow(plan_input: LifePlanInput, years: int = 40) -> list
 
     current_age = 2026 - self_member.birth_year
     balance = plan_input.current_savings
-    monthly_savings = plan_input.monthly_income - plan_input.monthly_expense
+    use_new_model = (plan_input.monthly_income_self > 0
+                     and plan_input.spouse_employment is not None)
 
     cashflow = []
 
@@ -184,13 +299,32 @@ def simulate_yearly_cashflow(plan_input: LifePlanInput, years: int = 40) -> list
         year = 2026 + i
         age = current_age + i
 
-        # 収入（退職後は年金のみ）
-        if age < plan_input.retirement_age:
-            annual_income = plan_input.monthly_income * 12
-            annual_expense = plan_input.monthly_expense * 12
+        if use_new_model:
+            # 新モデル: 自分と配偶者を分離
+            if age < plan_input.retirement_age:
+                self_monthly = plan_input.monthly_income_self
+            else:
+                self_monthly = 0
+            spouse_monthly = plan_input.spouse_employment.get_monthly_income(year)
+
+            if age < plan_input.retirement_age:
+                annual_income = (self_monthly + spouse_monthly) * 12
+                annual_expense = plan_input.monthly_expense * 12
+            else:
+                annual_income = plan_input.pension_monthly * 12 + spouse_monthly * 12
+                annual_expense = int(plan_input.monthly_expense * 0.7) * 12
         else:
-            annual_income = plan_input.pension_monthly * 12
-            annual_expense = int(plan_input.monthly_expense * 0.7) * 12
+            # 旧モデル: 世帯合計
+            if age < plan_input.retirement_age:
+                self_monthly = plan_input.monthly_income
+                spouse_monthly = 0
+                annual_income = plan_input.monthly_income * 12
+                annual_expense = plan_input.monthly_expense * 12
+            else:
+                self_monthly = 0
+                spouse_monthly = 0
+                annual_income = plan_input.pension_monthly * 12
+                annual_expense = int(plan_input.monthly_expense * 0.7) * 12
 
         # インフレ調整（支出のみ）
         inflation_factor = (1 + plan_input.inflation_rate / 100) ** i
@@ -211,6 +345,8 @@ def simulate_yearly_cashflow(plan_input: LifePlanInput, years: int = 40) -> list
         cashflow.append({
             "year": year,
             "age": age,
+            "self_income": self_monthly * 12,
+            "spouse_income": spouse_monthly * 12,
             "annual_income": annual_income,
             "annual_expense": annual_expense,
             "event_costs": event_costs,
@@ -225,10 +361,11 @@ def simulate_yearly_cashflow(plan_input: LifePlanInput, years: int = 40) -> list
 
 def life_plan_to_dict(plan_input: LifePlanInput) -> dict:
     """LifePlanInputを辞書に変換（保存用）"""
-    return {
+    result = {
         "family": [asdict(m) for m in plan_input.family],
         "current_savings": plan_input.current_savings,
         "monthly_income": plan_input.monthly_income,
+        "monthly_income_self": plan_input.monthly_income_self,
         "monthly_expense": plan_input.monthly_expense,
         "retirement_age": plan_input.retirement_age,
         "life_expectancy": plan_input.life_expectancy,
@@ -237,14 +374,28 @@ def life_plan_to_dict(plan_input: LifePlanInput) -> dict:
         "pension_monthly": plan_input.pension_monthly,
         "events": [asdict(e) for e in plan_input.events],
     }
+    if plan_input.spouse_employment:
+        result["spouse_employment"] = {
+            "phases": [asdict(p) for p in plan_input.spouse_employment.phases]
+        }
+    return result
 
 
 def dict_to_life_plan(data: dict) -> LifePlanInput:
     """辞書からLifePlanInputを復元"""
+    spouse_plan = None
+    spouse_data = data.get("spouse_employment")
+    if spouse_data:
+        spouse_plan = SpouseEmploymentPlan(
+            phases=[SpouseIncomePhase(**p) for p in spouse_data.get("phases", [])]
+        )
+
     return LifePlanInput(
         family=[FamilyMember(**m) for m in data.get("family", [])],
         current_savings=data.get("current_savings", 0),
         monthly_income=data.get("monthly_income", 0),
+        monthly_income_self=data.get("monthly_income_self", 0),
+        spouse_employment=spouse_plan,
         monthly_expense=data.get("monthly_expense", 0),
         retirement_age=data.get("retirement_age", 65),
         life_expectancy=data.get("life_expectancy", 90),
