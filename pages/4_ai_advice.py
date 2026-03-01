@@ -93,7 +93,7 @@ if not st.session_state.ai_messages:
     ]
     for col, tmpl in zip(cols, templates):
         with col:
-            if st.button(tmpl, use_container_width=True):
+            if st.button(tmpl, width="stretch"):
                 st.session_state.ai_messages.append({"role": "user", "content": tmpl})
                 st.rerun()
 

@@ -189,7 +189,7 @@ with col4:
 st.markdown("---")
 
 # ===== シミュレーション実行 =====
-if st.button("🚀 シミュレーション実行", type="primary", use_container_width=True):
+if st.button("🚀 シミュレーション実行", type="primary", width="stretch"):
     # 家族構成
     family = [FamilyMember(name=self_name or "自分", birth_year=self_birth_year, role="self")]
     if spouse_name:
@@ -279,7 +279,7 @@ if st.button("🚀 シミュレーション実行", type="primary", use_containe
         height=500,
         hovermode="x unified",
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
     # 赤字警告
     deficit = cf_df[cf_df["cumulative_savings"] < 0]
@@ -295,7 +295,7 @@ if st.button("🚀 シミュレーション実行", type="primary", use_containe
         st.markdown("#### 📚 教育費タイムライン")
         edu_data = [{"年": e.year, "年齢": e.year - self_birth_year, "イベント": e.name,
                      "費用": f"¥{e.cost:,}", "備考": e.description} for e in edu_events]
-        st.dataframe(pd.DataFrame(edu_data), use_container_width=True, hide_index=True)
+        st.dataframe(pd.DataFrame(edu_data), width="stretch", hide_index=True)
 
     # 住宅ローンの影響
     if housing == "住宅購入予定":
@@ -315,4 +315,4 @@ if st.button("🚀 シミュレーション実行", type="primary", use_containe
         for col in ["annual_income", "annual_expense", "event_costs", "investment_gain", "annual_balance", "cumulative_savings"]:
             display[col] = display[col].apply(lambda x: f"¥{int(x):,}")
         display.columns = ["年", "年齢", "年間収入", "年間支出", "イベント費", "イベント", "運用益", "年間収支", "累計資産"]
-        st.dataframe(display, use_container_width=True, hide_index=True)
+        st.dataframe(display, width="stretch", hide_index=True)

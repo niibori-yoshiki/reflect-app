@@ -105,7 +105,7 @@ fig.update_layout(
     xaxis_tickangle=-45,
     showlegend=False,
 )
-st.plotly_chart(fig, use_container_width=True)
+st.plotly_chart(fig, width="stretch")
 
 # ===== カテゴリ別 =====
 st.markdown("---")
@@ -128,7 +128,7 @@ with col_left:
         )
         fig.update_traces(textposition="inside", textinfo="percent+label")
         fig.update_layout(height=400, showlegend=False)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
 with col_right:
     if not cat_df.empty:
@@ -142,7 +142,7 @@ with col_right:
             yaxis={"categoryorder": "total ascending"},
             xaxis_title="金額（円）", yaxis_title="",
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
 # ===== ポートフォリオ =====
 if portfolio_url:
@@ -198,4 +198,4 @@ if portfolio_url:
                 groupnorm="",
             )
             fig.update_layout(height=400, yaxis_title="金額（円）")
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")

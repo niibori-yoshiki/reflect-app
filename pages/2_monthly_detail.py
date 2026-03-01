@@ -92,7 +92,7 @@ if not cat_curr.empty:
     fig.add_trace(go.Bar(x=merged["category"], y=merged["当月"], name="当月", marker_color="#3498db"))
     fig.add_trace(go.Bar(x=merged["category"], y=merged["前月"], name="前月", marker_color="#bdc3c7"))
     fig.update_layout(barmode="group", height=400, xaxis_title="", yaxis_title="金額（円）")
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
 # 支払者別
 st.markdown("---")
@@ -111,7 +111,7 @@ if not curr_df.empty and "payer" in curr_df.columns:
             import plotly.express as px
             fig = px.pie(payer_totals, values="amount", names="payer", hole=0.4)
             fig.update_layout(height=300, showlegend=True)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
 
 # 明細
 st.markdown("---")
@@ -122,4 +122,4 @@ if not curr_df.empty:
     display = display.sort_values("amount", ascending=False)
     display["amount"] = display["amount"].apply(lambda x: f"¥{int(x):,}")
     display.columns = ["カテゴリ", "項目", "金額", "支払者"]
-    st.dataframe(display, use_container_width=True, hide_index=True)
+    st.dataframe(display, width="stretch", hide_index=True)
