@@ -1,0 +1,51 @@
+{
+  "education_costs": {
+    "kindergarten": {
+      "public": 670000,
+      "private": 1590000,
+      "years": 3,
+      "start_age": 3,
+      "label": "幼稚園"
+    },
+    "elementary": {
+      "public": 2110000,
+      "private": 10000000,
+      "years": 6,
+      "start_age": 6,
+      "label": "小学校"
+    },
+    "junior_high": {
+      "public": 1610000,
+      "private": 4440000,
+      "years": 3,
+      "start_age": 12,
+      "label": "中学校"
+    },
+    "high_school": {
+      "public": 1540000,
+      "private": 3160000,
+      "years": 3,
+      "start_age": 15,
+      "label": "高校"
+    },
+    "university": {
+      "public": 2690000,
+      "private": 5270000,
+      "years": 4,
+      "start_age": 18,
+      "label": "大学"
+    }
+  },
+  "retirement_defaults": {
+    "retirement_age": 65,
+    "life_expectancy": 90,
+    "expense_ratio_after_retirement": 0.7,
+    "default_pension_monthly": 150000,
+    "inflation_rate": 1.0,
+    "investment_return": 3.0
+  },
+  "notes": {
+    "education_source": "文部科学省「子供の学習費調査」概算値",
+    "disclaimer": "これらは概算値であり、実際の費用は地域・学校により異なります"
+  }
+}
