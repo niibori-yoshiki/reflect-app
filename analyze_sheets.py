@@ -19,6 +19,7 @@ import os
 import re
 import sys
 from pathlib import Path
+from typing import Optional, Tuple
 
 try:
     import gspread
@@ -76,7 +77,7 @@ SHEET_NAME_PATTERNS = [
 ]
 
 
-def parse_sheet_name(name: str) -> tuple[int, int] | None:
+def parse_sheet_name(name: str) -> Optional[Tuple[int, int]]:
     """シート名から年月を取得"""
     for pattern in SHEET_NAME_PATTERNS:
         m = pattern.search(name)
@@ -224,7 +225,7 @@ def analyze_household_sheet(spreadsheet) -> str:
     return "\n".join(lines)
 
 
-def extract_total_from_cells(all_values: list) -> float | None:
+def extract_total_from_cells(all_values: list) -> Optional[float]:
     """セルから「合計金額」に対応する値を探す"""
     for row in all_values:
         for i, cell in enumerate(row):
