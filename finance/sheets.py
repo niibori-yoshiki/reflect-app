@@ -11,6 +11,8 @@
 5. スプレッドシートをサービスアカウントのメールアドレスに共有
 """
 
+from typing import List, Dict
+
 import gspread
 from google.oauth2.service_account import Credentials
 from pathlib import Path
@@ -47,18 +49,18 @@ def open_spreadsheet_by_url(url: str) -> gspread.Spreadsheet:
     return client.open_by_url(url)
 
 
-def get_all_sheet_names(spreadsheet: gspread.Spreadsheet) -> list[str]:
+def get_all_sheet_names(spreadsheet: gspread.Spreadsheet) -> List[str]:
     """全シート名を取得（月別シート一覧の確認用）"""
     return [ws.title for ws in spreadsheet.worksheets()]
 
 
-def get_sheet_data(spreadsheet: gspread.Spreadsheet, sheet_name: str) -> list[dict]:
+def get_sheet_data(spreadsheet: gspread.Spreadsheet, sheet_name: str) -> List[Dict]:
     """指定シートの全データを辞書のリストで取得（1行目をヘッダーとして使用）"""
     worksheet = spreadsheet.worksheet(sheet_name)
     return worksheet.get_all_records()
 
 
-def get_sheet_data_raw(spreadsheet: gspread.Spreadsheet, sheet_name: str) -> list[list[str]]:
+def get_sheet_data_raw(spreadsheet: gspread.Spreadsheet, sheet_name: str) -> list[List[str]]:
     """指定シートの全データを生の2次元リストで取得"""
     worksheet = spreadsheet.worksheet(sheet_name)
     return worksheet.get_all_values()

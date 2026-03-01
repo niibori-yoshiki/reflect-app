@@ -105,7 +105,7 @@ def average_monthly_expense(df: pd.DataFrame, n_months: int = 6) -> dict:
     }
 
 
-def savings_rate(df: pd.DataFrame, year: int, month: int) -> float | None:
+def savings_rate(df: pd.DataFrame, year: int, month: int):
     """貯蓄率を算出する（(収入-支出)/収入 * 100）"""
     summary = monthly_summary(df, year, month)
     if summary["income"] == 0:

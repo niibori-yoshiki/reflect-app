@@ -1,153 +1,125 @@
-"""📋 月別詳細 - 収支明細と前月比較"""
+"""📋 月別詳細 - 明細と前月比較"""
 
+import os
 import streamlit as st
 import plotly.graph_objects as go
 import pandas as pd
-from pathlib import Path
+from dotenv import load_dotenv
 
-from finance.sheets import open_spreadsheet_by_url, get_sheet_data
-from finance.parser import load_all_months
-from finance.analyzer import (
-    monthly_comparison,
-    category_breakdown,
-    top_expenses,
-)
+from finance.data_loader import load_household_data, get_category_totals
+
+load_dotenv()
 
 st.set_page_config(page_title="月別詳細", page_icon="📋", layout="wide")
 st.title("📋 月別詳細")
 
-url = st.session_state.get("spreadsheet_url", "")
-if not url:
-    st.info("サイドバーにスプレッドシートのURLを入力してください。")
-    st.stop()
-
-credentials_path = Path("credentials/service_account.json")
-if not credentials_path.exists():
-    st.warning("credentials/service_account.json が配置されていません。")
+household_url = st.session_state.get("household_url", os.getenv("HOUSEHOLD_SHEET_URL", ""))
+if not household_url:
+    st.info("トップページでスプレッドシートURLを設定してください。")
     st.stop()
 
 
 @st.cache_data(ttl=300)
-def load_data(spreadsheet_url: str) -> pd.DataFrame:
-    spreadsheet = open_spreadsheet_by_url(spreadsheet_url)
-    return load_all_months(spreadsheet, get_sheet_data)
+def cached_data(url):
+    return load_household_data(url)
 
 
 try:
     with st.spinner("データ読み込み中..."):
-        df = load_data(url)
+        df = cached_data(household_url)
 except Exception as e:
-    st.error(f"データの読み込みに失敗しました: {e}")
+    st.error(f"読み込みエラー: {e}")
     st.stop()
 
 if df.empty:
-    st.warning("データが見つかりませんでした。")
+    st.warning("データがありません")
     st.stop()
 
-# 年月の選択
-available_periods = df.groupby(["year", "month"]).size().reset_index()[["year", "month"]]
-available_periods = available_periods.sort_values(["year", "month"], ascending=False)
+# 年月選択
+periods = df.groupby(["year", "month"]).size().reset_index()[["year", "month"]]
+periods = periods.sort_values(["year", "month"], ascending=False)
 
 col1, col2 = st.columns(2)
 with col1:
-    selected_year = st.selectbox("年", available_periods["year"].unique())
+    sel_year = st.selectbox("年", periods["year"].unique())
 with col2:
-    months_in_year = available_periods[available_periods["year"] == selected_year]["month"].tolist()
-    selected_month = st.selectbox("月", months_in_year)
+    months = periods[periods["year"] == sel_year]["month"].tolist()
+    sel_month = st.selectbox("月", months)
 
 st.markdown("---")
 
-# 前月比較
-comparison = monthly_comparison(df, selected_year, selected_month)
-curr = comparison["current"]
-prev = comparison["previous"]
+# 当月データ
+curr_df = df[(df["year"] == sel_year) & (df["month"] == sel_month)]
+curr_total = curr_df["amount"].sum()
 
-st.subheader("前月比較")
+# 前月データ
+prev_m = sel_month - 1
+prev_y = sel_year
+if prev_m == 0:
+    prev_m = 12
+    prev_y -= 1
+prev_df = df[(df["year"] == prev_y) & (df["month"] == prev_m)]
+prev_total = prev_df["amount"].sum()
+
+# サマリー
 col1, col2, col3 = st.columns(3)
-
 with col1:
-    delta = comparison["income_change"]
-    pct = comparison["income_change_pct"]
-    pct_str = f" ({pct:+.1f}%)" if pct is not None else ""
-    st.metric("収入", f"¥{curr['income']:,.0f}", delta=f"¥{delta:,.0f}{pct_str}")
-
+    delta = f"¥{int(curr_total - prev_total):,}" if prev_total > 0 else None
+    st.metric("当月支出", f"¥{int(curr_total):,}", delta=delta, delta_color="inverse")
 with col2:
-    delta = comparison["expense_change"]
-    pct = comparison["expense_change_pct"]
-    pct_str = f" ({pct:+.1f}%)" if pct is not None else ""
-    st.metric("支出", f"¥{curr['expense']:,.0f}", delta=f"¥{delta:,.0f}{pct_str}", delta_color="inverse")
-
+    st.metric("1人あたり", f"¥{int(curr_total / 2):,}")
 with col3:
-    delta = comparison["balance_change"]
-    st.metric("収支", f"¥{curr['balance']:,.0f}", delta=f"¥{delta:,.0f}")
+    if prev_total > 0:
+        change_pct = (curr_total - prev_total) / prev_total * 100
+        st.metric("前月比", f"{change_pct:+.1f}%")
+    else:
+        st.metric("前月比", "N/A")
 
-# カテゴリ比較チャート
+# カテゴリ比較
 st.markdown("---")
 st.subheader("カテゴリ別 前月比較")
 
-cat_curr = category_breakdown(df, selected_year, selected_month, "expense")
-prev_month = selected_month - 1
-prev_year = selected_year
-if prev_month == 0:
-    prev_month = 12
-    prev_year -= 1
-cat_prev = category_breakdown(df, prev_year, prev_month, "expense")
+cat_curr = get_category_totals(df, sel_year, sel_month)
+cat_prev = get_category_totals(df, prev_y, prev_m)
 
 if not cat_curr.empty:
-    # マージして比較
     merged = cat_curr.rename(columns={"amount": "当月"}).merge(
         cat_prev.rename(columns={"amount": "前月"})[["category", "前月"]],
-        on="category",
-        how="outer",
+        on="category", how="outer",
     ).fillna(0)
 
     fig = go.Figure()
-    fig.add_trace(go.Bar(
-        x=merged["category"],
-        y=merged["当月"],
-        name="当月",
-        marker_color="#3498db",
-    ))
-    fig.add_trace(go.Bar(
-        x=merged["category"],
-        y=merged["前月"],
-        name="前月",
-        marker_color="#bdc3c7",
-    ))
-    fig.update_layout(
-        barmode="group",
-        xaxis_title="カテゴリ",
-        yaxis_title="金額（円）",
-        height=400,
-    )
+    fig.add_trace(go.Bar(x=merged["category"], y=merged["当月"], name="当月", marker_color="#3498db"))
+    fig.add_trace(go.Bar(x=merged["category"], y=merged["前月"], name="前月", marker_color="#bdc3c7"))
+    fig.update_layout(barmode="group", height=400, xaxis_title="", yaxis_title="金額（円）")
     st.plotly_chart(fig, use_container_width=True)
 
-# 支出上位
+# 支払者別
 st.markdown("---")
-st.subheader("支出トップ10")
-top = top_expenses(df, selected_year, selected_month, n=10)
-if not top.empty:
-    top_display = top.copy()
-    top_display["amount"] = top_display["amount"].apply(lambda x: f"¥{x:,.0f}")
-    st.dataframe(top_display, use_container_width=True, hide_index=True)
-else:
-    st.info("支出データがありません")
+st.subheader("支払者別内訳")
 
-# 全明細
+if not curr_df.empty and "payer" in curr_df.columns:
+    payer_totals = curr_df.groupby("payer")["amount"].sum().reset_index()
+    payer_totals = payer_totals.sort_values("amount", ascending=False)
+    if not payer_totals.empty:
+        col1, col2 = st.columns(2)
+        with col1:
+            for _, row in payer_totals.iterrows():
+                pct = row["amount"] / curr_total * 100
+                st.markdown(f"**{row['payer']}**: ¥{int(row['amount']):,} ({pct:.1f}%)")
+        with col2:
+            import plotly.express as px
+            fig = px.pie(payer_totals, values="amount", names="payer", hole=0.4)
+            fig.update_layout(height=300, showlegend=True)
+            st.plotly_chart(fig, use_container_width=True)
+
+# 明細
 st.markdown("---")
-with st.expander("全明細データを表示"):
-    month_df = df[(df["year"] == selected_year) & (df["month"] == selected_month)].copy()
-    if not month_df.empty:
-        month_df["amount_display"] = month_df["amount"].apply(lambda x: f"¥{x:,.0f}")
-        st.dataframe(
-            month_df[["date", "category", "amount_display", "type", "memo"]],
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "date": "日付",
-                "category": "カテゴリ",
-                "amount_display": "金額",
-                "type": "種別",
-                "memo": "メモ",
-            },
-        )
+st.subheader("支出明細")
+
+if not curr_df.empty:
+    display = curr_df[["category", "item", "amount", "payer"]].copy()
+    display = display.sort_values("amount", ascending=False)
+    display["amount"] = display["amount"].apply(lambda x: f"¥{int(x):,}")
+    display.columns = ["カテゴリ", "項目", "金額", "支払者"]
+    st.dataframe(display, use_container_width=True, hide_index=True)

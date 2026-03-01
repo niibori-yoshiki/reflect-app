@@ -1,159 +1,201 @@
-"""📊 ダッシュボード - 月次収支サマリー"""
+"""📊 ダッシュボード - 月次支出サマリー・ポートフォリオ"""
 
+import os
 import streamlit as st
 import plotly.express as px
 import plotly.graph_objects as go
 import pandas as pd
-from pathlib import Path
+from dotenv import load_dotenv
 
-from finance.sheets import open_spreadsheet_by_url, get_sheet_data
-from finance.parser import load_all_months
-from finance.analyzer import (
-    monthly_summary,
-    category_breakdown,
-    yearly_trend,
-    savings_rate,
+from finance.data_loader import (
+    load_household_data,
+    load_portfolio_data,
+    get_monthly_totals,
+    get_category_totals,
 )
+
+load_dotenv()
 
 st.set_page_config(page_title="ダッシュボード", page_icon="📊", layout="wide")
 st.title("📊 ダッシュボード")
 
-# データ読み込み
-url = st.session_state.get("spreadsheet_url", "")
-if not url:
-    st.info("サイドバーにスプレッドシートのURLを入力してください。")
-    st.stop()
+household_url = st.session_state.get("household_url", os.getenv("HOUSEHOLD_SHEET_URL", ""))
+portfolio_url = st.session_state.get("portfolio_url", os.getenv("PORTFOLIO_SHEET_URL", ""))
 
-credentials_path = Path("credentials/service_account.json")
-if not credentials_path.exists():
-    st.warning("credentials/service_account.json が配置されていません。トップページのセットアップガイドをご確認ください。")
+if not household_url:
+    st.info("トップページでスプレッドシートURLを設定してください。")
     st.stop()
 
 
 @st.cache_data(ttl=300)
-def load_data(spreadsheet_url: str) -> pd.DataFrame:
-    """スプレッドシートからデータを読み込む（5分キャッシュ）"""
-    spreadsheet = open_spreadsheet_by_url(spreadsheet_url)
-    return load_all_months(spreadsheet, get_sheet_data)
+def cached_household(url):
+    return load_household_data(url)
 
 
+@st.cache_data(ttl=300)
+def cached_portfolio(url):
+    return load_portfolio_data(url)
+
+
+# ===== 家計データ =====
 try:
-    with st.spinner("スプレッドシートからデータを読み込んでいます..."):
-        df = load_data(url)
-except FileNotFoundError as e:
-    st.error(str(e))
-    st.stop()
+    with st.spinner("家計簿を読み込み中..."):
+        df = cached_household(household_url)
 except Exception as e:
-    st.error(f"データの読み込みに失敗しました: {e}")
+    st.error(f"家計簿の読み込みエラー: {e}")
     st.stop()
 
 if df.empty:
-    st.warning("月別シートが見つかりませんでした。シート名に年月が含まれているか確認してください。")
+    st.warning("家計データが見つかりません")
     st.stop()
 
-# 年月の選択
-available_periods = df.groupby(["year", "month"]).size().reset_index()[["year", "month"]]
-available_periods = available_periods.sort_values(["year", "month"], ascending=False)
+monthly = get_monthly_totals(df)
 
-col1, col2 = st.columns(2)
+# ===== 直近月のサマリー =====
+latest = monthly.iloc[-1]
+prev = monthly.iloc[-2] if len(monthly) >= 2 else None
+
+col1, col2, col3 = st.columns(3)
 with col1:
-    selected_year = st.selectbox("年", available_periods["year"].unique())
+    delta = None
+    if prev is not None:
+        delta = f"¥{int(latest['total'] - prev['total']):,}"
+    st.metric(
+        f"{int(latest['year'])}年{int(latest['month'])}月 支出",
+        f"¥{int(latest['total']):,}",
+        delta=delta,
+        delta_color="inverse",
+    )
 with col2:
-    months_in_year = available_periods[available_periods["year"] == selected_year]["month"].tolist()
-    selected_month = st.selectbox("月", months_in_year)
-
-st.markdown("---")
-
-# 月次サマリー
-summary = monthly_summary(df, selected_year, selected_month)
-rate = savings_rate(df, selected_year, selected_month)
-
-col1, col2, col3, col4 = st.columns(4)
-with col1:
-    st.metric("収入", f"¥{summary['income']:,.0f}")
-with col2:
-    st.metric("支出", f"¥{summary['expense']:,.0f}")
+    st.metric("1人あたり", f"¥{int(latest['total'] / 2):,}")
 with col3:
-    st.metric("収支", f"¥{summary['balance']:,.0f}",
-              delta=f"¥{summary['balance']:,.0f}")
-with col4:
-    st.metric("貯蓄率", f"{rate}%" if rate is not None else "N/A")
+    # 直近6ヶ月の平均
+    recent_avg = monthly.tail(6)["total"].mean()
+    st.metric("直近6ヶ月平均", f"¥{int(recent_avg):,}")
 
 st.markdown("---")
 
-# カテゴリ別支出グラフ
+# ===== 月次推移グラフ =====
+st.subheader("月次支出推移")
+
+# 結婚関連の異常値を除外するオプション
+exclude_outliers = st.checkbox("異常値（100万超）を除外して表示", value=True)
+chart_data = monthly.copy()
+if exclude_outliers:
+    chart_data = chart_data[chart_data["total"] < 1000000]
+
+fig = go.Figure()
+fig.add_trace(go.Bar(
+    x=chart_data["label"],
+    y=chart_data["total"],
+    marker_color=["#e74c3c" if v > recent_avg else "#3498db" for v in chart_data["total"]],
+    text=[f"¥{int(v):,}" for v in chart_data["total"]],
+    textposition="outside",
+))
+fig.add_hline(
+    y=recent_avg,
+    line_dash="dash",
+    line_color="gray",
+    annotation_text=f"6ヶ月平均 ¥{int(recent_avg):,}",
+)
+fig.update_layout(
+    height=400,
+    xaxis_title="",
+    yaxis_title="支出（円）",
+    xaxis_tickangle=-45,
+    showlegend=False,
+)
+st.plotly_chart(fig, use_container_width=True)
+
+# ===== カテゴリ別 =====
+st.markdown("---")
+st.subheader("カテゴリ別支出")
+
 col_left, col_right = st.columns(2)
 
+# 全期間 vs 直近月の切り替え
 with col_left:
-    st.subheader("カテゴリ別支出")
-    cat_df = category_breakdown(df, selected_year, selected_month, "expense")
+    scope = st.radio("集計範囲", ["直近月", "全期間累計"], horizontal=True)
+    if scope == "直近月":
+        cat_df = get_category_totals(df, int(latest["year"]), int(latest["month"]))
+    else:
+        cat_df = get_category_totals(df)
+
     if not cat_df.empty:
         fig = px.pie(
-            cat_df,
-            values="amount",
-            names="category",
+            cat_df, values="amount", names="category",
             hole=0.4,
         )
         fig.update_traces(textposition="inside", textinfo="percent+label")
         fig.update_layout(height=400, showlegend=False)
         st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.info("支出データがありません")
 
 with col_right:
-    st.subheader("カテゴリ別支出ランキング")
     if not cat_df.empty:
         fig = px.bar(
-            cat_df,
-            x="amount",
-            y="category",
-            orientation="h",
-            text="amount",
+            cat_df, x="amount", y="category", orientation="h",
+            text=[f"¥{int(v):,}" for v in cat_df["amount"]],
         )
-        fig.update_traces(texttemplate="¥%{text:,.0f}", textposition="outside")
+        fig.update_traces(textposition="outside")
         fig.update_layout(
             height=400,
             yaxis={"categoryorder": "total ascending"},
-            xaxis_title="金額（円）",
-            yaxis_title="",
+            xaxis_title="金額（円）", yaxis_title="",
         )
         st.plotly_chart(fig, use_container_width=True)
 
-# 年間推移グラフ
-st.markdown("---")
-st.subheader(f"{selected_year}年 月別収支推移")
+# ===== ポートフォリオ =====
+if portfolio_url:
+    st.markdown("---")
+    st.subheader("📈 ポートフォリオ")
 
-trend = yearly_trend(df, selected_year)
-trend_filtered = trend[trend["transaction_count"] > 0]
+    try:
+        with st.spinner("ポートフォリオを読み込み中..."):
+            pf = cached_portfolio(portfolio_url)
+    except Exception as e:
+        st.error(f"ポートフォリオの読み込みエラー: {e}")
+        pf = {"months": [], "assets": {}}
 
-if not trend_filtered.empty:
-    fig = go.Figure()
-    fig.add_trace(go.Bar(
-        x=trend_filtered["month"],
-        y=trend_filtered["income"],
-        name="収入",
-        marker_color="#2ecc71",
-    ))
-    fig.add_trace(go.Bar(
-        x=trend_filtered["month"],
-        y=trend_filtered["expense"],
-        name="支出",
-        marker_color="#e74c3c",
-    ))
-    fig.add_trace(go.Scatter(
-        x=trend_filtered["month"],
-        y=trend_filtered["balance"],
-        name="収支",
-        mode="lines+markers",
-        line={"color": "#3498db", "width": 3},
-    ))
-    fig.update_layout(
-        barmode="group",
-        xaxis_title="月",
-        yaxis_title="金額（円）",
-        height=400,
-        xaxis={"dtick": 1},
-    )
-    st.plotly_chart(fig, use_container_width=True)
-else:
-    st.info(f"{selected_year}年のデータがありません")
+    if pf["months"] and pf["assets"]:
+        months = pf["months"]
+
+        # 総資産推移
+        total_key = next((k for k in pf["assets"] if "合計" in k), None)
+        if total_key:
+            total_vals = pf["assets"][total_key]
+            valid = [(m, v) for m, v in zip(months, total_vals) if v is not None]
+            if valid:
+                start_v = valid[0][1]
+                end_v = valid[-1][1]
+                gain = end_v - start_v
+                gain_pct = gain / start_v * 100 if start_v > 0 else 0
+
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("運用資産", f"¥{int(end_v):,}")
+                with col2:
+                    st.metric("含み益+追加投資", f"¥{int(gain):,}", delta=f"+{gain_pct:.1f}%")
+                with col3:
+                    cash_key = next((k for k in pf["assets"] if "現金" in k), None)
+                    if cash_key:
+                        cash_vals = [v for v in pf["assets"][cash_key] if v is not None]
+                        if cash_vals:
+                            st.metric("現金(生活費)", f"¥{int(cash_vals[-1]):,}")
+
+        # 資産推移チャート
+        chart_rows = []
+        for name, values in pf["assets"].items():
+            if "合計" in name or "現金" in name:
+                continue
+            for m, v in zip(months, values):
+                if v is not None:
+                    chart_rows.append({"月": m, "銘柄": name, "金額": v})
+
+        if chart_rows:
+            pf_df = pd.DataFrame(chart_rows)
+            fig = px.area(
+                pf_df, x="月", y="金額", color="銘柄",
+                groupnorm="",
+            )
+            fig.update_layout(height=400, yaxis_title="金額（円）")
+            st.plotly_chart(fig, use_container_width=True)
