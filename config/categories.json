@@ -1,0 +1,24 @@
+{
+  "expense_categories": [
+    {"name": "食費", "icon": "🍚", "budget_ratio": 25},
+    {"name": "住居費", "icon": "🏠", "budget_ratio": 25},
+    {"name": "水道光熱費", "icon": "💡", "budget_ratio": 7},
+    {"name": "通信費", "icon": "📱", "budget_ratio": 5},
+    {"name": "交通費", "icon": "🚃", "budget_ratio": 5},
+    {"name": "教育費", "icon": "📚", "budget_ratio": 10},
+    {"name": "医療費", "icon": "🏥", "budget_ratio": 3},
+    {"name": "保険料", "icon": "🛡️", "budget_ratio": 5},
+    {"name": "衣服費", "icon": "👕", "budget_ratio": 3},
+    {"name": "日用品", "icon": "🧴", "budget_ratio": 3},
+    {"name": "娯楽・趣味", "icon": "🎮", "budget_ratio": 5},
+    {"name": "交際費", "icon": "🤝", "budget_ratio": 3},
+    {"name": "その他", "icon": "📦", "budget_ratio": 1}
+  ],
+  "income_categories": [
+    {"name": "給与"},
+    {"name": "賞与"},
+    {"name": "副業"},
+    {"name": "投資収入"},
+    {"name": "その他収入"}
+  ]
+}
