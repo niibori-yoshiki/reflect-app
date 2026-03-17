@@ -1,0 +1,74 @@
+# ビジネス日記アプリ - Cursor Rules
+
+## プロジェクト概要
+Streamlit + Anthropic Claude APIを使ったビジネス振り返り日記アプリ。
+AIとの対話で今日の仕事を深掘りし、英語フレーズ学習とスキル可視化を行う。
+
+## 技術スタック
+- **フロントエンド**: Streamlit
+- **AI**: Anthropic Claude (claude-sonnet-4-20250514)
+- **言語**: Python 3.11+
+- **データ保存**: ローカルJSON (`data/` ディレクトリ)
+- **環境変数**: python-dotenv
+
+## ファイル構成
+```
+reflect-app/
+├── app.py          # メインアプリ（全ロジック）
+├── requirements.txt
+├── .env            # ANTHROPIC_API_KEY を設定
+└── data/
+    ├── profile.json           # レベル・XP・スキル累計
+    └── diaries/YYYY-MM-DD.json  # 日ごとの振り返り記録
+```
+
+## アプリのフロー
+1. **chat フェーズ**: AIと4往復の対話
+2. **summarizing フェーズ**: Claude APIでまとめJSON生成
+3. **summary フェーズ**: まとめ表示（要約・学び・英語フレーズ・スキル）
+4. **quiz フェーズ**: 英語穴埋めクイズ
+
+## データ構造
+
+### profile.json
+```json
+{
+  "level": 1,
+  "xp": 0,
+  "total_entries": 0,
+  "skills": {
+    "プロジェクト管理": 0,
+    "交渉": 0,
+    "プレゼンテーション": 0,
+    "リーダーシップ": 0,
+    "問題解決": 0,
+    "コミュニケーション": 0
+  }
+}
+```
+
+### diaries/YYYY-MM-DD.json（配列）
+```json
+[{
+  "summary": "今日の要約",
+  "key_learnings": ["学び1", "学び2"],
+  "english_phrases": [
+    {"english": "...", "japanese": "...", "context": "..."}
+  ],
+  "skills": {"プロジェクト管理": 0, ...},
+  "xp_gained": 20
+}]
+```
+
+## コーディング規約
+- 日本語UIを維持する
+- セッション状態は `st.session_state` で管理
+- AI呼び出しは `get_client()` 経由で `anthropic.Anthropic` クライアントを取得
+- フェーズ遷移後は必ず `st.rerun()` を呼ぶ
+- HTMLはXSS対策で `html.escape()` を使用する
+
+## よくある変更パターン
+- **会話ターン数変更**: `MAX_TURNS` 定数を編集
+- **スキルカテゴリ追加**: `SKILL_CATEGORIES` リストと `SUMMARY_PROMPT` のJSONスキーマを同時に更新
+- **新しいフェーズ追加**: `st.session_state.phase` の値を追加し、`main()` に `elif` ブロックを追加
+- **プロンプト改善**: `SYSTEM_PROMPT` / `SUMMARY_PROMPT` / `QUIZ_PROMPT` を編集
